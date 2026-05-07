@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set "PROJECT=%~dp0uc_online2.vcxproj"
+set "MAIN_PROJECT=%~dp0uc_online2.vcxproj"
+set "CORE_PROJECT=%~dp0uc_online2_core.vcxproj"
 
 REM Find MSBuild
 set "MSBUILD="
@@ -25,36 +26,65 @@ echo Found MSBuild: %MSBUILD%
 echo.
 
 echo ========================================
-echo  Building x86 (steam_api.dll)
+echo  Building Core DLL (uc_online2_core.dll)
 echo ========================================
-"%MSBUILD%" "%PROJECT%" -p:Configuration=Release -p:Platform=Win32 -m
+
+"%MSBUILD%" "%CORE_PROJECT%" -p:Configuration=Release -p:Platform=Win32 -m
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] x86 build failed.
+    echo [ERROR] Core x86 build failed.
     pause
     exit /b 1
 )
-echo x86 build succeeded: build\x86\steam_api.dll
+echo Core x86 build succeeded: build\x86\uc_online2_core.dll
 echo.
 
 echo ========================================
-echo  Building x64 (steam_api64.dll)
+echo  Building Core DLL (uc_online2_core.dll)
 echo ========================================
-"%MSBUILD%" "%PROJECT%" -p:Configuration=Release -p:Platform=x64 -m
+"%MSBUILD%" "%CORE_PROJECT%" -p:Configuration=Release -p:Platform=x64 -m
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] x64 build failed.
+    echo [ERROR] Core x64 build failed.
     pause
     exit /b 1
 )
-echo x64 build succeeded: build\x64\steam_api64.dll
+echo Core x64 build succeeded: build\x64\uc_online2_core.dll
 echo.
 
 echo ========================================
-echo  Both builds completed successfully
+echo  Building Main DLL (steam_api.dll)
 echo ========================================
-echo  x86: build\x86\steam_api.dll
-echo  x64: build\x64\steam_api64.dll
+"%MSBUILD%" "%MAIN_PROJECT%" -p:Configuration=Release -p:Platform=Win32 -m
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Main x86 build failed.
+    pause
+    exit /b 1
+)
+echo Main x86 build succeeded: build\x86\steam_api.dll
+echo.
+
+echo ========================================
+echo  Building Main DLL (steam_api64.dll)
+echo ========================================
+"%MSBUILD%" "%MAIN_PROJECT%" -p:Configuration=Release -p:Platform=x64 -m
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Main x64 build failed.
+    pause
+    exit /b 1
+)
+echo Main x64 build succeeded: build\x64\steam_api64.dll
+echo.
+
+echo ========================================
+echo  All builds completed successfully
+echo ========================================
+echo  Core x86: build\x86\uc_online2_core.dll
+echo  Core x64: build\x64\uc_online2_core.dll
+echo  Main x86: build\x86\steam_api.dll
+echo  Main x64: build\x64\steam_api64.dll
 echo ========================================
 
 pause

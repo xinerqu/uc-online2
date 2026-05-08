@@ -20,7 +20,6 @@
 // Compiler does NOT like it that these are at the end, way after where it wants to see them. So we are making it aware of the existence of these functions. This is just to shut it the fuck up and compile lol.
 void SetAppIDEnv();
 void WriteAppIDFile();
-bool GetSteamPathFromRegistry(char* outPath, size_t pathSize);
 
 #include "include/api/api_callbacks.h"
 #include "include/api/api_client.h"
@@ -167,17 +166,19 @@ void* InitSteamClient(HMODULE* phMod, bool bLocal, const char* iface)
 {
     UCOLOG("[UCOnline2] InitSteamClient -> %s", iface);
     
-    // Get the Steam installation path from registry (avoids Steam API call before init)
+    // Get the Steam installation path first
     char steamPath[MAX_PATH] = {0};
-    if (GetSteamPathFromRegistry(steamPath, MAX_PATH))
+    if (SteamAPI_GetSteamInstallPath() && 
+        strcmp(SteamAPI_GetSteamInstallPath(), "UCOnline2_InvalidPath") != 0)
     {
-        UCOLOG("[UCOnline2] Using Steam path from registry: %s", steamPath);
+        strcpy_s(steamPath, SteamAPI_GetSteamInstallPath());
+        UCOLOG("[UCOnline2] Using Steam path: %s", steamPath);
     }
     else
     {
         // Fallback to current directory if we can't get Steam path
         strcpy_s(steamPath, ".");
-        UCOLOG("[UCOnline2] Steam path unavailable from registry, using current directory");
+        UCOLOG("[UCOnline2] Steam path unavailable, using current directory");
     }
 
     const char* steamClientPath = "steamclient.dll";
@@ -267,31 +268,28 @@ static void LoadGameOverlay()
         HMODULE hOverlay = GetModuleHandleW(L"GameOverlayRenderer64.dll");
     #endif
 
-        if (forcedAppId != 769 && !hOverlay)
+    if (forcedAppId != 769 && !hOverlay)
+    {
+        const char* installPath = SteamAPI_GetSteamInstallPath();
+        if (_stricmp(installPath, "UCOnline2_InvalidPath") != 0)
         {
-            char installPath[MAX_PATH] = {0};
-            if (GetSteamPathFromRegistry(installPath, MAX_PATH))
+            char overlayPath[MAX_PATH] = { 0 };
+            #if defined(_M_IX86)
+                _snprintf_s(overlayPath, MAX_PATH, _TRUNCATE, "%s\\GameOverlayRenderer.dll", installPath);
+            #elif defined(_M_AMD64)
+                _snprintf_s(overlayPath, MAX_PATH, _TRUNCATE, "%s\\GameOverlayRenderer64.dll", installPath);
+            #endif
+            HMODULE hLoaded = LoadLibraryExA(overlayPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+            if (hLoaded)
             {
-                if (_stricmp(installPath, "UCOnline2_InvalidPath") != 0)
-                {
-                    char overlayPath[MAX_PATH] = { 0 };
-                    #if defined(_M_IX86)
-                        _snprintf_s(overlayPath, MAX_PATH, _TRUNCATE, "%s\\GameOverlayRenderer.dll", installPath);
-                    #elif defined(_M_AMD64)
-                        _snprintf_s(overlayPath, MAX_PATH, _TRUNCATE, "%s\\GameOverlayRenderer64.dll", installPath);
-                    #endif
-                    HMODULE hLoaded = LoadLibraryExA(overlayPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-                    if (hLoaded)
-                    {
-                        UCOLOG("[UCOnline2] Loaded game overlay: %s", overlayPath);
-                    }
-                    else
-                    {
-                        UCOLOG("[UCOnline2] Failed to load game overlay: %s (error %lu)", overlayPath, GetLastError());
-                    }
-                }
+                UCOLOG("[UCOnline2] Loaded game overlay: %s", overlayPath);
+            }
+            else
+            {
+                UCOLOG("[UCOnline2] Failed to load game overlay: %s (error %lu)", overlayPath, GetLastError());
             }
         }
+    }
 #endif
 }
 
@@ -329,7 +327,7 @@ BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
         #if defined(_M_IX86)
             _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
         #elif defined(_M_AMD64)
-            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
+            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
         #endif
         UCOLOG("[UCOnline2] Core DLL path: %s", corePath);
 
@@ -777,245 +775,6 @@ CCallbackDispatcher* GetDispatcher()
 // ============================================================
 // SetAppIDEnv / WriteAppIDFile (called by SteamAPI functions)
 // ============================================================
-
-bool GetSteamPathFromRegistry(char* outPath, size_t pathSize)
-{
-    // First try the hardcoded common Steam installation path
-    const char* hardcodedPath = "C:\\Program Files (x86)\\Steam";
-    if (strlen(hardcodedPath) < pathSize)
-    {
-        strcpy_s(outPath, pathSize, hardcodedPath);
-        
-        // Verify the path exists and contains Steam executable
-        char steamExePath[MAX_PATH];
-        _snprintf_s(steamExePath, MAX_PATH, _TRUNCATE, "%s\\Steam.exe", hardcodedPath);
-        
-        if (GetFileAttributesA(steamExePath) != INVALID_FILE_ATTRIBUTES)
-        {
-            // Ensure null-termination
-            outPath[pathSize - 1] = '\0';
-            
-            // Remove trailing backslash if present
-            size_t len = strlen(outPath);
-            if (len > 0 && (outPath[len-1] == '\\' || outPath[len-1] == '/'))
-            {
-                outPath[len-1] = '\0';
-            }
-            
-            return true;
-        }
-    }
-    
-    // Fallback to registry detection
-    HKEY hKey = nullptr;
-    LONG result;
-    
-    // Try the 64-bit registry key first
-    result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Valve\\Steam", 0, KEY_READ, &hKey);
-    if (result != ERROR_SUCCESS)
-    {
-        // Try the 32-bit registry key
-        result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Valve\\Steam", 0, KEY_READ, &hKey);
-        if (result != ERROR_SUCCESS)
-        {
-            // Try alternative registry locations
-            result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            if (result != ERROR_SUCCESS)
-            {
-                result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            }
-        }
-    }
-    
-    if (result != ERROR_SUCCESS)
-    {
-        return false;
-    }
-
-    DWORD type = 0;
-    DWORD size = (DWORD)pathSize;
-    
-    // Try to get InstallPath first
-    result = RegQueryValueExA(hKey, "InstallPath", nullptr, &type, (LPBYTE)outPath, &size);
-    
-    // If InstallPath doesn't exist or failed, try other common values
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        // Try InstallLocation as alternative
-        result = RegQueryValueExA(hKey, "InstallLocation", nullptr, &type, (LPBYTE)outPath, &size);
-    }
-    
-    RegCloseKey(hKey);
-
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        return false;
-    }
-
-    // Ensure null-termination
-    outPath[pathSize - 1] = '\0';
-    
-    return true;
-}
-            
-            return true;
-        }
-    }
-    
-    // Fallback to registry detection
-    HKEY hKey = nullptr;
-    LONG result;
-    
-    // Try the 64-bit registry key first
-    result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Valve\\Steam", 0, KEY_READ, &hKey);
-    if (result != ERROR_SUCCESS)
-    {
-        // Try the 32-bit registry key
-        result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Valve\\Steam", 0, KEY_READ, &hKey);
-        if (result != ERROR_SUCCESS)
-        {
-            // Try alternative registry locations
-            result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            if (result != ERROR_SUCCESS)
-            {
-                result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            }
-        }
-    }
-    
-    if (result != ERROR_SUCCESS)
-    {
-        return false;
-    }
-
-    DWORD type = 0;
-    DWORD size = (DWORD)pathSize;
-    
-    // Try to get InstallPath first
-    result = RegQueryValueExA(hKey, "InstallPath", nullptr, &type, (LPBYTE)outPath, &size);
-    
-    // If InstallPath doesn't exist or failed, try other common values
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        // Try InstallLocation as alternative
-        result = RegQueryValueExA(hKey, "InstallLocation", nullptr, &type, (LPBYTE)outPath, &size);
-    }
-    
-    RegCloseKey(hKey);
-
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        return false;
-    }
-
-    // Ensure null-termination
-    outPath[pathSize - 1] = '\0';
-    
-    return true;
-}
-            
-            return true;
-        }
-    }
-    
-    // Fallback to registry detection
-    HKEY hKey;
-    LONG result;
-    
-    // Try the 64-bit registry key first
-    result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\Valve\\Steam", 0, KEY_READ, &hKey);
-    if (result != ERROR_SUCCESS)
-    {
-        // Try the 32-bit registry key
-        result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Valve\\Steam", 0, KEY_READ, &hKey);
-        if (result != ERROR_SUCCESS)
-        {
-            // Try alternative registry locations
-            result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            if (result != ERROR_SUCCESS)
-            {
-                result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 228980", 0, KEY_READ, &hKey);
-            }
-        }
-    }
-    
-    if (result != ERROR_SUCCESS)
-    {
-        return false;
-    }
-
-    DWORD type = 0;
-    DWORD size = (DWORD)pathSize;
-    
-    // Try to get InstallPath first
-    result = RegQueryValueExA(hKey, "InstallPath", nullptr, &type, (LPBYTE)outPath, &size);
-    
-    // If InstallPath doesn't exist or failed, try other common values
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        // Try InstallLocation as alternative
-        result = RegQueryValueExA(hKey, "InstallLocation", nullptr, &type, (LPBYTE)outPath, &size);
-    }
-    
-    RegCloseKey(hKey);
-
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        return false;
-    }
-
-    // Ensure null-termination
-    outPath[pathSize - 1] = '\0';
-    
-    // Remove trailing backslash if present
-    size_t len = strlen(outPath);
-    if (len > 0 && (outPath[len-1] == '\\' || outPath[len-1] == '/'))
-    {
-        outPath[len-1] = '\0';
-    }
-    
-    return true;
-}
-        }
-    }
-    
-    if (result != ERROR_SUCCESS)
-    {
-        return false;
-    }
-
-    DWORD type = 0;
-    DWORD size = (DWORD)pathSize;
-    
-    // Try to get InstallPath first
-    result = RegQueryValueExA(hKey, "InstallPath", nullptr, &type, (LPBYTE)outPath, &size);
-    
-    // If InstallPath doesn't exist or failed, try other common values
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        // Try InstallLocation as alternative
-        result = RegQueryValueExA(hKey, "InstallLocation", nullptr, &type, (LPBYTE)outPath, &size);
-    }
-    
-    RegCloseKey(hKey);
-
-    if (result != ERROR_SUCCESS || type != REG_SZ)
-    {
-        return false;
-    }
-
-    // Ensure null-termination
-    outPath[pathSize - 1] = '\0';
-    
-    // Remove trailing backslash if present
-    size_t len = strlen(outPath);
-    if (len > 0 && (outPath[len-1] == '\\' || outPath[len-1] == '/'))
-    {
-        outPath[len-1] = '\0';
-    }
-    
-    return true;
-}
 
 void SetAppIDEnv()
 {

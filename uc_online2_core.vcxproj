@@ -14,6 +14,11 @@
     <ClCompile Include="uc_online2_core.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="uc_online2_core.rc">
+      <AdditionalIncludeDirectories>$(ProjectDir)include</AdditionalIncludeDirectories> 
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="include\uc_loader.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

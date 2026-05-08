@@ -14,7 +14,6 @@
 #include <string>
 #include <vector>
 
-#include "include/uc_loader.h"
 
 // ============================================================
 // Core DLL globals (these are private to this DLL)
@@ -31,6 +30,10 @@ static uint32_t s_ForcedAppId = 480;
 static uint32_t s_OriginalAppId = 0;
 
 static void SteamStub_Init();
+
+#define UC_CORE_EXPORTS
+
+#include "include/uc_loader.h"
 
 // ============================================================
 // Logging

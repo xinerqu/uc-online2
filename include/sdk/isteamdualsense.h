@@ -3,8 +3,8 @@
  * Copyright (C) 2019 Sony Interactive Entertainment Inc.
  * All Rights Reserved.
  */
-
-#include "isteaminput.h"
+//this likely isn't even needed since there's no compile errors, but because i hate the ugly red errors i've added it here to shut it the fuck up
+#include <cstdint>
 #ifndef _SCE_PAD_TRIGGER_EFFECT_H
 #define _SCE_PAD_TRIGGER_EFFECT_H
 

@@ -4,7 +4,7 @@
  * All Rights Reserved.
  */
 
-
+#include "isteaminput.h"
 #ifndef _SCE_PAD_TRIGGER_EFFECT_H
 #define _SCE_PAD_TRIGGER_EFFECT_H
 

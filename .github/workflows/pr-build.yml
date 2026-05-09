@@ -32,7 +32,7 @@ jobs:
         run: |
           $files = @(
             "build/x86/uc_online2_core.dll",
-            "build/x64/uc_online2_core.dll",
+            "build/x64/uc_online2_core64.dll",
             "build/x86/steam_api.dll",
             "build/x64/steam_api64.dll"
           )

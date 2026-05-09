@@ -71,13 +71,13 @@
     <LinkIncremental>false</LinkIncremental>
     <TargetName>steam_api</TargetName>
     <OutDir>$(ProjectDir)build\x86\</OutDir>
-    <IntDir>builddebug\intermediate\x86\</IntDir>
+    <IntDir>build\intermediate\x86\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>steam_api64</TargetName>
     <OutDir>$(ProjectDir)build\x64\</OutDir>
-    <IntDir>builddebug\intermediate\x64\</IntDir>
+    <IntDir>build\intermediate\x64\</IntDir>
   </PropertyGroup>
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
       <LinkIncremental>false</LinkIncremental>

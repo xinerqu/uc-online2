@@ -459,7 +459,7 @@ static bool S_CALLTYPE Hooked_BIsSubscribedApp(void* pSteamApps, AppId_t appId)
     return true;
 }
 
-void InstallBIsSubscribedAppHook()
+void __cdecl InstallBIsSubscribedAppHook()
 {
     if (!g_bClientReady || !g_ClientCtx.SteamApps())
     {

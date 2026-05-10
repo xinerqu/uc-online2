@@ -270,7 +270,6 @@ S_API void* S_CALLTYPE SteamInternal_ContextInit(void* pData)
 
 void UCOLOG(const char* fmt, ...)
 {
-#ifdef _DEBUG
     if (!fmt) return;
     va_list args;
     va_start(args, fmt);
@@ -299,16 +298,13 @@ void UCOLOG(const char* fmt, ...)
     
     fclose(f);
     va_end(args);
-#endif
 }
 
 void UCOColor(WORD color, const char* text)
 {
     (void)color;
-#ifdef _DEBUG
     if (text && text[0])
         UCOLOG("%s", text);
-#endif
 }
 
 void* InitSteamClient(HMODULE* phMod, bool bLocal, const char* iface)

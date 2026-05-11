@@ -101,6 +101,15 @@ Okay, so this part I did not cover as of publishing the source files, this will 
 
 ## Changelog (xinerqu fork vs upstream v1.5.0)
 
+### v1.6.1 — Steam Remote Storage 本地文件回退 (存档修复)
+
+**修复了 Steamworks.NET 游戏退出后存档丢失的问题**
+
+- **问题**：某些游戏通过文件系统直接写部分存档文件（而非 Steam Remote Storage API），导致这些文件不在 Steam 的云同步清单（remotecache.vdf）中。重启游戏后 Steam API 无法识别这些文件，返回"文件未找到"。
+- **修复**：在 `SteamAPI_ISteamRemoteStorage_FileRead` 中增加了**本地文件系统回退**机制。当 Steam API 返回 0 字节时，自动尝试从 `userdata/<SteamID>/<AppID>/remote/` 目录直接读取文件。
+- **影响范围**：所有通过 Steam Remote Storage 存档的游戏，特别是使用文件系统+API 混合写入模式的游戏（如 Godot + Steamworks.NET）
+- **测试验证**：Slay the Spire 2 存档可正常读写、退出重进后进度保留
+
 ### v1.6.0 — Steamworks.NET 兼容性修复 (Godot 游戏支持)
 
 **修复了 Godot + Steamworks.NET 游戏（如 Slay the Spire 2）无法运行的问题**

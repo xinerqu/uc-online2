@@ -101,6 +101,18 @@ Okay, so this part I did not cover as of publishing the source files, this will 
 
 ## Changelog (xinerqu fork vs upstream v1.5.0)
 
+### v1.6.2 — Facepunch.Steamworks / Unity 游戏兼容性修复
+
+**修复了使用 Facepunch.Steamworks 的 Unity 游戏（如 BadPunPC）因缺失 flat API 导出而崩溃的问题。**
+
+- **问题**：Facepunch.Steamworks 需要 995 个 Steam API 导出，uc-online2 缺少 22 个，包括 ISteamAppList 接口、若干接口版本字符串、以及部分网络/Stadia 相关导出。缺少这些导出导致游戏在初始化时直接崩溃。
+- **修复**：补全全部 22 个缺失的导出：
+  - **ISteamAppList**：`GetISteamAppList` + 5 个 AppList 函数，通过 `SteamInternal_FindOrCreateUserInterface` 获取真实接口
+  - **接口版本字符串**：`SteamAppList_v001`、`SteamUser_v021`、`SteamRemotePlay_v001`、`SteamUGC_v016`、`SteamVideo_v002`、`SteamGameServer_v014`、`SteamGameServerUGC_v016`
+  - **Networking stubs**：FakeUDPPort 4 个函数、SteamDatagramHostedAddress 3 个函数
+  - **Stadia stubs**：`GetStadiaID`、`SetStadiaID`
+- **影响范围**：所有使用 Facepunch.Steamworks 的 Unity / .NET 游戏
+
 ### v1.6.1 — 存档持久化修复
 
 **修复了部分 Steam Remote Storage 游戏退出后存档丢失的问题。**

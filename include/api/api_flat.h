@@ -601,9 +601,7 @@ S_API ISteamInput* S_CALLTYPE SteamAPI_ISteamClient_GetISteamInput(intptr_t inst
 }
 S_API ISteamAppList* S_CALLTYPE SteamAPI_ISteamClient_GetISteamAppList(intptr_t instancePtr, HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char * pchVersion)
 {
-	if (g_bClientReady == false)
-		__debugbreak();
-	return g_ClientCtx.SteamClient()->GetISteamAppList(hSteamUser, hSteamPipe, pchVersion);
+	return (ISteamAppList*)SteamInternal_FindOrCreateUserInterface(hSteamUser, pchVersion);
 }
 S_API ISteamParties* S_CALLTYPE SteamAPI_ISteamClient_GetISteamParties(intptr_t instancePtr, HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char * pchVersion)
 {

@@ -94,43 +94,43 @@ S_API ESteamAPIInitResult S_CALLTYPE SteamInternal_SteamAPI_Init(const char* psz
 	InitCoreDLL();
 
 	SetAppIDEnv();
-		WriteAppIDFile();
-		UCOLOG("[UCOnline2] AppID forced to %u", g_ForcedAppId);
+	WriteAppIDFile();
+	UCOLOG("[UCOnline2] AppID forced to %u", g_ForcedAppId);
 
-		if (g_pSteamClient)
+	if (g_pSteamClient)
+	{
+		UCOLOG("[UCOnline2] Init already called, SteamClient: 0x%p, use Shutdown first", g_pSteamClient);
+		return k_ESteamAPIInitResult_OK;
+	}
+
+	g_pSteamClient = static_cast<ISteamClient*>(InitSteamClient(&g_ClientModule, s_bAnonUser, STEAMCLIENT_INTERFACE_VERSION));
+	UCOLOG("[UCOnline2] InitSteamClient returned SteamClient: 0x%p", g_pSteamClient);
+
+	if (!g_pSteamClient)
+	{
+		UCOLOG("[UCOnline2] Failed to get SteamClient");
+		SteamAPI_Shutdown();
+		return k_ESteamAPIInitResult_FailedGeneric;
+	}
+
+	SetAppIDEnv();
+	UCOLOG("[UCOnline2] SetAppIDEnv called after SteamClient acquisition");
+
+	if (!s_bAnonUser)
+	{
+		UCOLOG("[UCOnline2] Creating global Steam user (non-anonymous)");
+		g_ClientPipe = g_pSteamClient->CreateSteamPipe();
+		UCOLOG("[UCOnline2] CreateSteamPipe returned: %u", g_ClientPipe);
+		
+		if (g_ClientPipe == 0)
 		{
-			UCOLOG("[UCOnline2] Init already called, SteamClient: 0x%p, use Shutdown first", g_pSteamClient);
-			return k_ESteamAPIInitResult_OK;
-		}
-
-		g_pSteamClient = static_cast<ISteamClient*>(InitSteamClient(&g_ClientModule, s_bAnonUser, STEAMCLIENT_INTERFACE_VERSION));
-		UCOLOG("[UCOnline2] InitSteamClient returned SteamClient: 0x%p", g_pSteamClient);
-
-		if (!g_pSteamClient)
-		{
-			UCOLOG("[UCOnline2] Failed to get SteamClient");
+			UCOLOG("[UCOnline2] CreateSteamPipe failed");
 			SteamAPI_Shutdown();
-			return k_ESteamAPIInitResult_FailedGeneric;
+			return k_ESteamAPIInitResult_NoSteamClient;
 		}
 
-		SetAppIDEnv();
-		UCOLOG("[UCOnline2] SetAppIDEnv called after SteamClient acquisition");
-
-		if (!s_bAnonUser)
-		{
-			UCOLOG("[UCOnline2] Creating global Steam user (non-anonymous)");
-			g_ClientPipe = g_pSteamClient->CreateSteamPipe();
-			UCOLOG("[UCOnline2] CreateSteamPipe returned: %u", g_ClientPipe);
-
-			if (g_ClientPipe == 0)
-			{
-				UCOLOG("[UCOnline2] CreateSteamPipe failed");
-				SteamAPI_Shutdown();
-				return k_ESteamAPIInitResult_NoSteamClient;
-			}
-
-			g_ClientUser = g_pSteamClient->ConnectToGlobalUser(g_ClientPipe);
-			UCOLOG("[UCOnline2] ConnectToGlobalUser returned: %u", (uint32)g_ClientUser);
+		g_ClientUser = g_pSteamClient->ConnectToGlobalUser(g_ClientPipe);
+		UCOLOG("[UCOnline2] ConnectToGlobalUser returned: %u", (uint32)g_ClientUser);
 	}
 	else
 	{

@@ -597,12 +597,21 @@ void InitCoreDLL()
 {
     if (g_CoreModule) return;
 
+    // Use a bare-minimum diagnostic file (no CRT, no UCOLOG)
+    HANDLE hDiag = CreateFileA("C:\\users\\cools\\desktop\\uc2_diag.txt", GENERIC_WRITE,
+        FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    auto wr = [&](const char* s) {
+        DWORD n; WriteFile(hDiag, s, (DWORD)strlen(s), &n, NULL);
+    };
+
+    wr("InitCoreDLL start\n");
+
     __try
     {
         char corePath[MAX_PATH] = { 0 };
         DWORD len = GetModuleFileNameA(g_hMainModule, corePath, sizeof(corePath));
-        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER) return;
-        if (!PathRemoveFileSpecA(corePath)) return;
+        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER) { wr("FAIL getmodulepath\n"); CloseHandle(hDiag); return; }
+        if (!PathRemoveFileSpecA(corePath)) { wr("FAIL pathremove\n"); CloseHandle(hDiag); return; }
 
         #if defined(_M_IX86)
             _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
@@ -610,19 +619,48 @@ void InitCoreDLL()
             _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
         #endif
 
+        wr("LoadLibrary core...\n");
         g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+
         if (g_CoreModule)
         {
+            wr("Core loaded, getting funcs\n");
+
             g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
             g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
 
             g_ForcedAppId = 480;
             g_OriginalAppId = 0;
 
-            if (g_pfnCoreInit) g_pfnCoreInit();
+            if (g_pfnCoreInit)
+            {
+                wr("Calling UC_Core_Init...\n");
+                g_pfnCoreInit();
+                wr("UC_Core_Init returned OK\n");
+            }
+
+            UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
+            UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
+            if (pfnGetAppId) { g_ForcedAppId = pfnGetAppId(); wr("Got AppID\n"); }
+            if (pfnGetOgAppId) { g_OriginalAppId = pfnGetOgAppId(); wr("Got ogAppID\n"); }
         }
+        else
+        {
+            wr("LoadLibrary failed\n");
+            CloseHandle(hDiag);
+            return;
+        }
+
+        wr("InitCoreDLL done, about to return to SteamAPI_Init\n");
     }
-    __except (EXCEPTION_EXECUTE_HANDLER) {}
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        wr("CRASH in InitCoreDLL! Exception code written next\n");
+        char buf[32]; _snprintf_s(buf, sizeof(buf), _TRUNCATE, "Exception: 0x%08X\n", GetExceptionCode());
+        wr(buf);
+    }
+
+    CloseHandle(hDiag);
 }
 
 // ============================================================
@@ -1012,22 +1050,17 @@ CCallbackDispatcher* GetDispatcher()
 
 void SetAppIDEnv()
 {
-    // If ogAppId is set (= real Steam game), DON'T touch SteamAppId.
-    // Steam already set the correct AppId when launching the game.
-    // Only override SteamAppId for non-Steam games (ogAppId == 0).
-    if (g_OriginalAppId == 0)
-    {
-        char szApp[16] = { 0 };
-        _snprintf_s(szApp, sizeof(szApp), _TRUNCATE, "%u", g_ForcedAppId);
-        SetEnvironmentVariableA("SteamAppId", szApp);
-    }
-
+    char szApp[16] = { 0 };
     char szGame[32] = { 0 };
     char szOverlayGame[32] = { 0 };
+
+    _snprintf_s(szApp, sizeof(szApp), _TRUNCATE, "%u", g_ForcedAppId);
     _snprintf_s(szGame, sizeof(szGame), _TRUNCATE, "%llu", CGameID(g_ForcedAppId).ToUint64());
+
     uint32_t overlayAppId = (g_OriginalAppId != 0) ? g_OriginalAppId : g_ForcedAppId;
     _snprintf_s(szOverlayGame, sizeof(szOverlayGame), _TRUNCATE, "%llu", CGameID(overlayAppId).ToUint64());
 
+    SetEnvironmentVariableA("SteamAppId", szApp);
     SetEnvironmentVariableA("SteamGameId", szGame);
     SetEnvironmentVariableA("SteamOverlayGameId", szOverlayGame);
 }

@@ -520,13 +520,7 @@ UC_CORE_API void UC_Core_SetAppIDEnv()
     uint32_t overlayAppId = (s_OriginalAppId != 0) ? s_OriginalAppId : s_ForcedAppId;
     _snprintf_s(szOverlayGame, sizeof(szOverlayGame), _TRUNCATE, "%llu", CGameID(overlayAppId).ToUint64());
 
-    // Only override SteamAppId for non-Steam games (ogAppId == 0).
-    // Real Steam games have the correct AppId set by the Steam launcher already.
-    if (s_OriginalAppId == 0)
-    {
-        SetEnvironmentVariableA("SteamAppId", szApp);
-    }
-
+    SetEnvironmentVariableA("SteamAppId", szApp);
     SetEnvironmentVariableA("SteamGameId", szGame);
     SetEnvironmentVariableA("SteamOverlayGameId", szOverlayGame);
 }

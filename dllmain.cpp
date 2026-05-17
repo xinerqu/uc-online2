@@ -595,72 +595,86 @@ static void LoadGameOverlay()
 
 void InitCoreDLL()
 {
-    if (g_CoreModule) return;
-
-    // Use a bare-minimum diagnostic file (no CRT, no UCOLOG)
-    HANDLE hDiag = CreateFileA("C:\\users\\cools\\desktop\\uc2_diag.txt", GENERIC_WRITE,
-        FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    auto wr = [&](const char* s) {
-        DWORD n; WriteFile(hDiag, s, (DWORD)strlen(s), &n, NULL);
-    };
-
-    wr("InitCoreDLL start\n");
+    if (g_CoreModule)
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: core already initialized");
+        return;
+    }
 
     __try
     {
+        UCOLOG("[UCOnline2] InitCoreDLL: loading core DLL...");
+
         char corePath[MAX_PATH] = { 0 };
         DWORD len = GetModuleFileNameA(g_hMainModule, corePath, sizeof(corePath));
-        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER) { wr("FAIL getmodulepath\n"); CloseHandle(hDiag); return; }
-        if (!PathRemoveFileSpecA(corePath)) { wr("FAIL pathremove\n"); CloseHandle(hDiag); return; }
+        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: failed to get module path, error: %lu", GetLastError());
+            return;
+        }
+
+        if (!PathRemoveFileSpecA(corePath))
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: failed to remove file spec");
+            return;
+        }
 
         #if defined(_M_IX86)
             _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
         #elif defined(_M_AMD64)
             _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
         #endif
+        UCOLOG("[UCOnline2] InitCoreDLL: Core DLL path: %s", corePath);
 
-        wr("LoadLibrary core...\n");
         g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-
         if (g_CoreModule)
         {
-            wr("Core loaded, getting funcs\n");
+            UCOLOG("[UCOnline2] InitCoreDLL: Core DLL loaded: 0x%p", g_CoreModule);
 
             g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
             g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
+
+            UCOLOG("[UCOnline2] InitCoreDLL: Init=0x%p Shutdown=0x%p",
+                   g_pfnCoreInit, g_pfnCoreShutdown);
 
             g_ForcedAppId = 480;
             g_OriginalAppId = 0;
 
             if (g_pfnCoreInit)
             {
-                wr("Calling UC_Core_Init...\n");
+                UCOLOG("[UCOnline2] InitCoreDLL: calling UC_Core_Init");
                 g_pfnCoreInit();
-                wr("UC_Core_Init returned OK\n");
+                UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init completed");
             }
 
+            // Read AppIDs AFTER UC_Core_Init
             UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
             UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
-            if (pfnGetAppId) { g_ForcedAppId = pfnGetAppId(); wr("Got AppID\n"); }
-            if (pfnGetOgAppId) { g_OriginalAppId = pfnGetOgAppId(); wr("Got ogAppID\n"); }
+            if (pfnGetAppId) {
+                g_ForcedAppId = pfnGetAppId();
+                UCOLOG("[UCOnline2] InitCoreDLL: AppID=%u", g_ForcedAppId);
+            }
+            if (pfnGetOgAppId) {
+                g_OriginalAppId = pfnGetOgAppId();
+                UCOLOG("[UCOnline2] InitCoreDLL: ogAppID=%u", g_OriginalAppId);
+            }
         }
         else
         {
-            wr("LoadLibrary failed\n");
-            CloseHandle(hDiag);
-            return;
+            UCOLOG("[UCOnline2] InitCoreDLL: Failed to load core DLL (error %lu)", GetLastError());
         }
 
-        wr("InitCoreDLL done, about to return to SteamAPI_Init\n");
+        UCOLOG("[UCOnline2] InitCoreDLL: PID=%lu Thread=%lu",
+               GetCurrentProcessId(), GetCurrentThreadId());
+
+        LoadGameOverlay();
+        UCOLOG("[UCOnline2] InitCoreDLL: overlay done");
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        wr("CRASH in InitCoreDLL! Exception code written next\n");
-        char buf[32]; _snprintf_s(buf, sizeof(buf), _TRUNCATE, "Exception: 0x%08X\n", GetExceptionCode());
-        wr(buf);
+        UCOLOG("[UCOnline2] InitCoreDLL: CRASHED with exception 0x%08X",
+               GetExceptionCode());
     }
-
-    CloseHandle(hDiag);
 }
 
 // ============================================================

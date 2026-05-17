@@ -89,6 +89,10 @@ S_API const char* S_CALLTYPE SteamAPI_GetSteamInstallPath()
 S_API ESteamAPIInitResult S_CALLTYPE SteamInternal_SteamAPI_Init(const char* pszVersions, SteamErrMsg* pOutErr)
 {
 	UCOLOG("[UCOnline2] SteamAPI_Init called with pszVersions: %s", pszVersions ? pszVersions : "null");
+
+	// Lazy-init core DLL (moved out of DllMain for GoldSrc compatibility)
+	InitCoreDLL();
+
 	SetAppIDEnv();
 	WriteAppIDFile();
 	UCOLOG("[UCOnline2] AppID forced to %u", g_ForcedAppId);

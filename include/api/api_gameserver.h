@@ -2,6 +2,9 @@ S_API ESteamAPIInitResult S_CALLTYPE SteamInternal_GameServer_Init_V2(uint32 unI
 {
 	UCOLOG("[UCOnline2] SteamInternal_GameServer_Init_V2\r\n");
 
+	// Lazy-init core DLL (moved out of DllMain for GoldSrc compatibility)
+	InitCoreDLL();
+
 	if (g_ServerClient)
 	{
 		UCOColor(FOREGROUND_RED | FOREGROUND_INTENSITY, "[UCOnline2] GameServer_Init already called, use Shutdown first\r\n");

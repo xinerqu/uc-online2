@@ -25,6 +25,7 @@ S_API ISteamClient* g_pSteamClientGameServer = nullptr;
 // Compiler does NOT like it that these are at the end, way after where it wants to see them. So we are making it aware of the existence of these functions. This is just to shut it the fuck up and compile lol.
 void SetAppIDEnv();
 void WriteAppIDFile();
+void InitCoreDLL();
 
 #include "include/api/api_callbacks.h"
 #include "include/api/api_client.h"
@@ -96,6 +97,8 @@ uintp g_CtxCounter = 0;
 
 static UC_Core_Init_t g_pfnCoreInit = nullptr;
 static UC_Core_Shutdown_t g_pfnCoreShutdown = nullptr;
+
+HMODULE g_hMainModule = nullptr;
 
 #ifdef _DEBUG
 CDumpHandler::CDumpHandler() : m_bReady(false)
@@ -587,6 +590,92 @@ static void LoadGameOverlay()
 }
 
 // ============================================================
+// InitCoreDLL - Lazy core initialization (called from SteamAPI_Init)
+// ============================================================
+
+void InitCoreDLL()
+{
+    if (g_CoreModule)
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: core already initialized");
+        return;
+    }
+
+    UCOLOG("[UCOnline2] InitCoreDLL: loading core DLL...");
+
+    // Build path to uc_online2_core.dll based on our own location
+    char corePath[MAX_PATH] = { 0 };
+    DWORD len = GetModuleFileNameA(g_hMainModule, corePath, sizeof(corePath));
+    if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: failed to get module path, error: %lu", GetLastError());
+        return;
+    }
+
+    if (!PathRemoveFileSpecA(corePath))
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: failed to remove file spec");
+        return;
+    }
+
+    #if defined(_M_IX86)
+        _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
+    #elif defined(_M_AMD64)
+        _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
+    #endif
+    UCOLOG("[UCOnline2] InitCoreDLL: Core DLL path: %s", corePath);
+
+    g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (g_CoreModule)
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: Core DLL loaded: 0x%p", g_CoreModule);
+
+        g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
+        g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
+        UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
+        UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
+
+        UCOLOG("[UCOnline2] InitCoreDLL: Init=0x%p Shutdown=0x%p GetAppId=0x%p GetOgAppId=0x%p",
+               g_pfnCoreInit, g_pfnCoreShutdown, pfnGetAppId, pfnGetOgAppId);
+
+        g_ForcedAppId = 480;
+        g_OriginalAppId = 0;
+
+        if (g_pfnCoreInit)
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: calling UC_Core_Init");
+            g_pfnCoreInit();
+            UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init returned");
+        }
+        else
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init not found!");
+        }
+
+        if (pfnGetAppId)
+        {
+            g_ForcedAppId = pfnGetAppId();
+            UCOLOG("[UCOnline2] InitCoreDLL: AppID from core: %u", g_ForcedAppId);
+        }
+
+        if (pfnGetOgAppId)
+        {
+            g_OriginalAppId = pfnGetOgAppId();
+            UCOLOG("[UCOnline2] InitCoreDLL: Original AppID from core: %u", g_OriginalAppId);
+        }
+    }
+    else
+    {
+        UCOLOG("[UCOnline2] InitCoreDLL: Failed to load core DLL (error %lu)", GetLastError());
+    }
+
+    UCOLOG("[UCOnline2] InitCoreDLL: PID=%lu Thread=%lu CmdLine=%s",
+           GetCurrentProcessId(), GetCurrentThreadId(), GetCommandLineA());
+
+    LoadGameOverlay();
+}
+
+// ============================================================
 // DllMain
 // ============================================================
 
@@ -597,99 +686,9 @@ BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
         UCOLOG("[UCOnline2] DllMain -> DLL_PROCESS_ATTACH");
         UCOLOG("[UCOnline2] Module handle: 0x%p", hModule);
 
+        g_hMainModule = hModule;
         InitializeSRWLock(&g_CtxLock);
         InitializeSRWLock(&g_CallbackLock);
-
-        // Load the core DLL
-        char corePath[MAX_PATH] = { 0 };
-        DWORD len = GetModuleFileNameA(hModule, corePath, sizeof(corePath));
-        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-        {
-            UCOLOG("[UCOnline2] Failed to get module filename, error: %lu", GetLastError());
-            return FALSE;
-        }
-        UCOLOG("[UCOnline2] Module path: %s", corePath);
-
-        if (!PathRemoveFileSpecA(corePath))
-        {
-            UCOLOG("[UCOnline2] Failed to remove file spec from path");
-            return FALSE;
-        }
-        UCOLOG("[UCOnline2] Module directory: %s", corePath);
-
-        #if defined(_M_IX86)
-            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
-        #elif defined(_M_AMD64)
-            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
-        #endif
-        UCOLOG("[UCOnline2] Core DLL path: %s", corePath);
-
-        g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (g_CoreModule)
-        {
-            UCOLOG("[UCOnline2] Core DLL loaded successfully, handle: 0x%p", g_CoreModule);
-            
-            g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
-            g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
-            UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
-            UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
-
-            UCOLOG("[UCOnline2] Core function pointers - Init: 0x%p, Shutdown: 0x%p, GetAppId: 0x%p, GetOgAppId: 0x%p", 
-                   g_pfnCoreInit, g_pfnCoreShutdown, pfnGetAppId, pfnGetOgAppId);
-
-            // Set defaults before core init
-            g_ForcedAppId = 480;
-            g_OriginalAppId = 0;
-
-            if (g_pfnCoreInit)
-            {
-                UCOLOG("[UCOnline2] Calling UC_Core_Init");
-                g_pfnCoreInit();
-                UCOLOG("[UCOnline2] UC_Core_Init returned");
-            }
-            else
-            {
-                UCOLOG("[UCOnline2] UC_Core_Init function not found!");
-            }
-
-            // Get the actual values from core after init
-            if (pfnGetAppId)
-            {
-                g_ForcedAppId = pfnGetAppId();
-                UCOLOG("[UCOnline2] Retrieved AppID from core: %u", g_ForcedAppId);
-            }
-            else
-            {
-                UCOLOG("[UCOnline2] UC_Core_GetAppId function not found!");
-            }
-            
-            if (pfnGetOgAppId)
-            {
-                g_OriginalAppId = pfnGetOgAppId();
-                UCOLOG("[UCOnline2] Retrieved Original AppID from core: %u", g_OriginalAppId);
-            }
-            else
-            {
-                UCOLOG("[UCOnline2] UC_Core_GetOgAppId function not found!");
-            }
-        }
-        else
-        {
-            UCOLOG("[UCOnline2] Failed to load core DLL: %s (error %lu)", corePath, GetLastError());
-        }
-
-        #ifdef _DEBUG
-        g_ForcedAppId = 480;
-        g_OriginalAppId = 0;
-        UCOLOG("[UCOnline2] Debug mode: Forced AppID reset to 480");
-        #endif
-
-        UCOLOG("[UCOnline2] PID: %lu", GetCurrentProcessId());
-        UCOLOG("[UCOnline2] Thread: %lu", GetCurrentThreadId());
-        UCOLOG("[UCOnline2] Command line: %s", GetCommandLineA());
-
-        LoadGameOverlay();
-        UCOLOG("[UCOnline2] Game overlay loading completed");
     }
     else if (dwReason == DLL_PROCESS_DETACH)
     {
@@ -710,14 +709,6 @@ BOOL WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
             g_CoreModule = nullptr;
             UCOLOG("[UCOnline2] Core DLL unloaded");
         }
-    }
-    else if (dwReason == DLL_THREAD_ATTACH)
-    {
-        UCOLOG("[UCOnline2] DllMain -> DLL_THREAD_ATTACH, Thread ID: %lu", GetCurrentThreadId());
-    }
-    else if (dwReason == DLL_THREAD_DETACH)
-    {
-        UCOLOG("[UCOnline2] DllMain -> DLL_THREAD_DETACH, Thread ID: %lu", GetCurrentThreadId());
     }
 
     return TRUE;

@@ -601,78 +601,80 @@ void InitCoreDLL()
         return;
     }
 
-    UCOLOG("[UCOnline2] InitCoreDLL: loading core DLL...");
-
-    // Build path to uc_online2_core.dll based on our own location
-    char corePath[MAX_PATH] = { 0 };
-    DWORD len = GetModuleFileNameA(g_hMainModule, corePath, sizeof(corePath));
-    if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+    __try
     {
-        UCOLOG("[UCOnline2] InitCoreDLL: failed to get module path, error: %lu", GetLastError());
-        return;
-    }
+        UCOLOG("[UCOnline2] InitCoreDLL: loading core DLL...");
 
-    if (!PathRemoveFileSpecA(corePath))
-    {
-        UCOLOG("[UCOnline2] InitCoreDLL: failed to remove file spec");
-        return;
-    }
-
-    #if defined(_M_IX86)
-        _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
-    #elif defined(_M_AMD64)
-        _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
-    #endif
-    UCOLOG("[UCOnline2] InitCoreDLL: Core DLL path: %s", corePath);
-
-    g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (g_CoreModule)
-    {
-        UCOLOG("[UCOnline2] InitCoreDLL: Core DLL loaded: 0x%p", g_CoreModule);
-
-        g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
-        g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
-        UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
-        UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
-
-        UCOLOG("[UCOnline2] InitCoreDLL: Init=0x%p Shutdown=0x%p GetAppId=0x%p GetOgAppId=0x%p",
-               g_pfnCoreInit, g_pfnCoreShutdown, pfnGetAppId, pfnGetOgAppId);
-
-        g_ForcedAppId = 480;
-        g_OriginalAppId = 0;
-
-        if (g_pfnCoreInit)
+        char corePath[MAX_PATH] = { 0 };
+        DWORD len = GetModuleFileNameA(g_hMainModule, corePath, sizeof(corePath));
+        if (len == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER)
         {
-            UCOLOG("[UCOnline2] InitCoreDLL: calling UC_Core_Init");
-            g_pfnCoreInit();
-            UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init returned");
+            UCOLOG("[UCOnline2] InitCoreDLL: failed to get module path, error: %lu", GetLastError());
+            return;
+        }
+
+        if (!PathRemoveFileSpecA(corePath))
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: failed to remove file spec");
+            return;
+        }
+
+        #if defined(_M_IX86)
+            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core.dll", corePath);
+        #elif defined(_M_AMD64)
+            _snprintf_s(corePath, MAX_PATH, _TRUNCATE, "%s\\uc_online2_core64.dll", corePath);
+        #endif
+        UCOLOG("[UCOnline2] InitCoreDLL: Core DLL path: %s", corePath);
+
+        g_CoreModule = LoadLibraryExA(corePath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (g_CoreModule)
+        {
+            UCOLOG("[UCOnline2] InitCoreDLL: Core DLL loaded: 0x%p", g_CoreModule);
+
+            g_pfnCoreInit = (UC_Core_Init_t)GetProcAddress(g_CoreModule, "UC_Core_Init");
+            g_pfnCoreShutdown = (UC_Core_Shutdown_t)GetProcAddress(g_CoreModule, "UC_Core_Shutdown");
+
+            UCOLOG("[UCOnline2] InitCoreDLL: Init=0x%p Shutdown=0x%p",
+                   g_pfnCoreInit, g_pfnCoreShutdown);
+
+            g_ForcedAppId = 480;
+            g_OriginalAppId = 0;
+
+            if (g_pfnCoreInit)
+            {
+                UCOLOG("[UCOnline2] InitCoreDLL: calling UC_Core_Init");
+                g_pfnCoreInit();
+                UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init completed");
+            }
+
+            // Read AppIDs AFTER UC_Core_Init
+            UC_Core_GetAppId_t pfnGetAppId = (UC_Core_GetAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetAppId");
+            UC_Core_GetOgAppId_t pfnGetOgAppId = (UC_Core_GetOgAppId_t)GetProcAddress(g_CoreModule, "UC_Core_GetOgAppId");
+            if (pfnGetAppId) {
+                g_ForcedAppId = pfnGetAppId();
+                UCOLOG("[UCOnline2] InitCoreDLL: AppID=%u", g_ForcedAppId);
+            }
+            if (pfnGetOgAppId) {
+                g_OriginalAppId = pfnGetOgAppId();
+                UCOLOG("[UCOnline2] InitCoreDLL: ogAppID=%u", g_OriginalAppId);
+            }
         }
         else
         {
-            UCOLOG("[UCOnline2] InitCoreDLL: UC_Core_Init not found!");
+            UCOLOG("[UCOnline2] InitCoreDLL: Failed to load core DLL (error %lu)", GetLastError());
         }
 
-        if (pfnGetAppId)
-        {
-            g_ForcedAppId = pfnGetAppId();
-            UCOLOG("[UCOnline2] InitCoreDLL: AppID from core: %u", g_ForcedAppId);
-        }
+        UCOLOG("[UCOnline2] InitCoreDLL: PID=%lu Thread=%lu",
+               GetCurrentProcessId(), GetCurrentThreadId());
 
-        if (pfnGetOgAppId)
-        {
-            g_OriginalAppId = pfnGetOgAppId();
-            UCOLOG("[UCOnline2] InitCoreDLL: Original AppID from core: %u", g_OriginalAppId);
-        }
+        LoadGameOverlay();
+        UCOLOG("[UCOnline2] InitCoreDLL: overlay done");
     }
-    else
+    __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        UCOLOG("[UCOnline2] InitCoreDLL: Failed to load core DLL (error %lu)", GetLastError());
+        UCOLOG("[UCOnline2] InitCoreDLL: CRASHED with exception 0x%08X",
+               GetExceptionCode());
     }
-
-    UCOLOG("[UCOnline2] InitCoreDLL: PID=%lu Thread=%lu CmdLine=%s",
-           GetCurrentProcessId(), GetCurrentThreadId(), GetCommandLineA());
-
-    LoadGameOverlay();
 }
 
 // ============================================================
